@@ -2,14 +2,16 @@
 
 void setup() {
   Serial.begin(115200);
-  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(D1, OUTPUT);
+  pinMode(D5, INPUT);
 }
 
 void loop() {
-  Serial.println("Low Voltage");
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(1000);
-  Serial.println("High Voltage");
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(1000);
+  if (digitalRead(D5) == HIGH) {
+    Serial.println("high");
+    digitalWrite(D1, HIGH);
+  } else {
+    Serial.println("low");
+    digitalWrite(D1, LOW);
+  }
 }
