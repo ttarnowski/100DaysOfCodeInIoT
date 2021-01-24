@@ -2,53 +2,70 @@
 
 #define RELAY_PIN D1
 #define BUTTON_PIN D5
+#define BUZZER_PIN D2
+
+#define COFFEE_MAKING_TIME 10 * 60 * 1000
+#define SOUND_NOTIFICATION_TIME 5 * 1000
 
 void setup() {
   Serial.begin(115200);
-  pinMode(D1, OUTPUT);
-  pinMode(D5, INPUT_PULLUP);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 }
 
-unsigned long coffeeReadyTime = 0;
-unsigned long buzzOffTime = 0;
+unsigned long coffeeReadyTime;
+unsigned long buzzerOffTime;
 
-void makeCoffee(unsigned long time = 10 * 60 * 1000) {
-  Serial.println("Making coffee...");
-
-  digitalWrite(D1, HIGH);
-
-  coffeeReadyTime = millis() + time;
+bool isButtonPressed() {
+  return digitalRead(BUTTON_PIN) == LOW;
 }
 
-void notify(unsigned long time = 5 * 60 * 1000) {
-  digitalWrite(D2, HIGH);
-
-  buzzOffTime = millis() + time;
+bool isRelayOn() {
+  return digitalRead(RELAY_PIN) == HIGH;
 }
 
-void isButtonPressed() {
-  return digitalRead(D5) === LOW;
+bool isRelayOff() {
+  return !isRelayOn();
 }
 
-Timer timer;
+bool isBuzzerOn() {
+  return digitalRead(BUZZER_PIN) == HIGH;
+}
+
+void switchOnTheRelay() {
+  Serial.println("Switching on the relay");
+  digitalWrite(RELAY_PIN, HIGH);
+  coffeeReadyTime = millis() + COFFEE_MAKING_TIME;
+}
+
+void switchOffTheRelay() {
+  Serial.println("Switching relay off");
+  digitalWrite(RELAY_PIN, LOW);
+}
+
+void switchOnTheBuzzer() {
+  Serial.println("Switching on the buzzer");
+  digitalWrite(BUZZER_PIN, HIGH);
+  buzzerOffTime = millis() + SOUND_NOTIFICATION_TIME;
+}
+
+void switchOffTheBuzzer() {
+  Serial.println("Switching off the buzzer");
+  digitalWrite(BUZZER_PIN, LOW);
+}
 
 void loop() {
-
-  timer.tick();
-
-  if (digitalRead(D1) == LOW && isButtonPressed()) {
-    makeCoffee(5 * 1000);
-    timer.setTimeout([]() {
-    Serial.println("Coffee ready!");
-    digitalWrite(D1, LOW);
-
-    }, 5 * 1000);
+  if (isRelayOff() && isButtonPressed()) {
+    switchOnTheRelay();
   }
 
-  if (digitalRead(D1) == HIGH && millis() > coffeeReadyTime) {
+  if (isRelayOn() && coffeeReadyTime < millis()) {
+    switchOffTheRelay();
+    switchOnTheBuzzer();
   }
 
-  if (digitalRead(D2) == HIGH && millis() > buzzOffTime) {
-    digitalWrite(D2, LOW);
+  if (isBuzzerOn() && buzzerOffTime < millis()) {
+    switchOffTheBuzzer();
   }
 }
