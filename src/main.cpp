@@ -7,11 +7,11 @@ void setup() {
 }
 
 void loop() {
-  if (digitalRead(D5) == HIGH) {
-    Serial.println("High");
+  if (digitalRead(D5) == LOW) {
+    Serial.println("relay on");
     digitalWrite(D1, HIGH);
   } else {
-    Serial.println("Low");
+    Serial.println("relay off");
     digitalWrite(D1, LOW);
   }
 }
