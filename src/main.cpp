@@ -41,20 +41,70 @@ rqXRfboQnoZsG4q5WTP468SQvvG5
 -----END CERTIFICATE-----
 )EOF";
 
-bool connectToWiFi() {
-  int failedAttemptsNum = 0;
-  while (WiFiMulti.run() != WL_CONNECTED && ++failedAttemptsNum <= 10) {
-    delay(1000);
-    Serial.print(".");
+class EventDispatcher {
+private:
+  struct Listener {
+    const char *eventName;
+    std::function<void(void)> callback;
+    bool isOnce;
+  };
+  std::vector<Listener> listeners;
+
+public:
+  void on(const char *eventName, std::function<void(void)> fn) {
+    this->listeners.push_back(Listener{eventName, fn, false});
   }
 
-  if (failedAttemptsNum >= 10) {
-    Serial.println("Failed to connect to WiFi.");
-    return false;
+  void once(const char *eventName, std::function<void(void)> fn) {
+    this->listeners.push_back(Listener{eventName, fn, true});
   }
 
-  return true;
-}
+  void dispatch(const char *eventName) {
+    for (auto it = this->listeners.begin(); it != this->listeners.end(); ++it) {
+      if (strcmp(it->eventName, eventName) == 0) {
+        it->callback();
+
+        if (it->isOnce) {
+          this->listeners.erase(it--);
+        }
+      }
+    }
+  }
+};
+
+class WiFiManager {
+private:
+  EventDispatcher *dispatcher;
+  bool connected = false;
+  bool shouldConnect = false;
+
+public:
+  static constexpr const char *WiFiConnectedEvent = "wifi_connected";
+  static constexpr const char *WiFiDisconnectedEvent = "wifi_disconnected";
+
+  WiFiManager(EventDispatcher *dispatcher) { this->dispatcher = dispatcher; }
+
+  void connect() { this->shouldConnect = true; }
+
+  void disconnect() {
+    this->shouldConnect = false;
+    WiFi.disconnect();
+    this->connected = false;
+    this->dispatcher->dispatch(WiFiManager::WiFiDisconnectedEvent);
+  }
+
+  void loop() {
+    if (this->shouldConnect && !this->connected &&
+        WiFiMulti.run() == WL_CONNECTED) {
+      this->connected = true;
+      this->shouldConnect = false;
+      this->dispatcher->dispatch(WiFiManager::WiFiConnectedEvent);
+    }
+  }
+};
+
+EventDispatcher dispatcher;
+WiFiManager wifiManager(&dispatcher);
 
 void setClock() {
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
@@ -78,15 +128,25 @@ void setup() {
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
 
   delay(1000);
   WiFi.mode(WIFI_STA);
   WiFiMulti.addAP(SSID, PASSWORD);
 
-  if (connectToWiFi()) {
+  dispatcher.on(WiFiManager::WiFiConnectedEvent, []() {
     setClock();
-    WiFi.disconnect();
-  }
+    digitalWrite(LED_BUILTIN, HIGH);
+  });
+
+  dispatcher.on(WiFiManager::WiFiDisconnectedEvent,
+                []() { digitalWrite(LED_BUILTIN, LOW); });
+
+  dispatcher.once(WiFiManager::WiFiConnectedEvent,
+                  []() { wifiManager.disconnect(); });
+
+  wifiManager.connect();
 }
 
 unsigned long relayTime;
@@ -123,56 +183,56 @@ void switchOffTheBuzzer() {
 }
 
 void sendHttpRequest() {
-  if (!connectToWiFi()) {
-    return;
-  }
+  dispatcher.once(WiFiManager::WiFiConnectedEvent, [=]() {
+    BearSSL::WiFiClientSecure client;
+    BearSSL::X509List list(cert);
+    client.setTrustAnchors(&list);
 
-  setClock();
+    HTTPClient http;
 
-  BearSSL::WiFiClientSecure client;
-  BearSSL::X509List list(cert);
-  client.setTrustAnchors(&list);
+    Serial.print("[HTTP] begin...\n");
+    // Establish the connection
+    if (http.begin(client,
+                   "https://5dsx4lgd5l.execute-api.us-east-1.amazonaws.com/dev/"
+                   "hello")) {
 
-  HTTPClient http;
+      Serial.print("[HTTP] POST...\n");
+      // start connection and send HTTP header, set the HTTP method and request
+      // body
+      int httpCode = http.POST("{\"message\":\"hello from ESP8266\"}");
 
-  Serial.print("[HTTP] begin...\n");
-  // Establish the connection
-  if (http.begin(
-          client,
-          "https://5dsx4lgd5l.execute-api.us-east-1.amazonaws.com/dev/hello")) {
+      // httpCode will be negative on error
+      if (httpCode > 0) {
+        // HTTP header has been send and Server response header has been handled
+        Serial.printf("[HTTP] POST... code: %d\n", httpCode);
 
-    Serial.print("[HTTP] POST...\n");
-    // start connection and send HTTP header, set the HTTP method and request
-    // body
-    int httpCode = http.POST("{\"message\":\"hello from ESP8266\"}");
-
-    // httpCode will be negative on error
-    if (httpCode > 0) {
-      // HTTP header has been send and Server response header has been handled
-      Serial.printf("[HTTP] POST... code: %d\n", httpCode);
-
-      // file found at server
-      if (httpCode == HTTP_CODE_OK) {
-        // read response body as a string
-        String payload = http.getString();
-        Serial.println(payload);
+        // file found at server
+        if (httpCode == HTTP_CODE_OK) {
+          // read response body as a string
+          String payload = http.getString();
+          Serial.println(payload);
+        }
+      } else {
+        // print out the error message
+        Serial.printf("[HTTP] POST... failed, error: %s\n",
+                      http.errorToString(httpCode).c_str());
       }
+
+      // finish the exchange
+      http.end();
     } else {
-      // print out the error message
-      Serial.printf("[HTTP] POST... failed, error: %s\n",
-                    http.errorToString(httpCode).c_str());
+      Serial.printf("[HTTP] Unable to connect\n");
     }
 
-    // finish the exchange
-    http.end();
-  } else {
-    Serial.printf("[HTTP] Unable to connect\n");
-  }
+    wifiManager.disconnect();
+  });
 
-  WiFi.disconnect();
+  wifiManager.connect();
 }
 
 void loop() {
+  wifiManager.loop();
+
   if (isRelayOff() && isButtonPressed()) {
     switchOnTheRelay();
   }
