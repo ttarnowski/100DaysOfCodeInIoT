@@ -1,15 +1,16 @@
 #include <Arduino.h>
 
+#include "DHTesp.h"
+#include <APIGatewayTemperatureClient.hpp>
 #include <ESP8266HTTPClient.h>
-#include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
-#include <WiFiClient.h>
-
-ESP8266WiFiMulti WiFiMulti;
+#include <EventDispatcher.hpp>
+#include <WiFiManager.hpp>
 
 #define RELAY_PIN D1
 #define BUTTON_PIN D5
 #define BUZZER_PIN D2
+#define TEMP_SENSOR_PIN D6
 
 #define RELAY_TIMER_TIME 5 * 1 * 1000
 #define SOUND_NOTIFICATION_TIME 2 * 1000
@@ -18,93 +19,13 @@ ESP8266WiFiMulti WiFiMulti;
 #define SSID "myssid"
 #define PASSWORD "mypassword"
 
-const char *cert PROGMEM = R"EOF(
------BEGIN CERTIFICATE-----
-MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF
-ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6
-b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL
-MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv
-b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj
-ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM
-9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw
-IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6
-VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L
-93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm
-jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC
-AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA
-A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI
-U5PMCCjjmCXPI6T53iHTfIUJrU6adTrCC2qJeHZERxhlbI1Bjjt/msv0tadQ1wUs
-N+gDS63pYaACbvXy8MWy7Vu33PqUXHeeE6V/Uq2V8viTO96LXFvKWlJbYK8U90vv
-o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU
-5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy
-rqXRfboQnoZsG4q5WTP468SQvvG5
------END CERTIFICATE-----
-)EOF";
-
-class EventDispatcher {
-private:
-  struct Listener {
-    const char *eventName;
-    std::function<void(void)> callback;
-    bool isOnce;
-  };
-  std::vector<Listener> listeners;
-
-public:
-  void on(const char *eventName, std::function<void(void)> fn) {
-    this->listeners.push_back(Listener{eventName, fn, false});
-  }
-
-  void once(const char *eventName, std::function<void(void)> fn) {
-    this->listeners.push_back(Listener{eventName, fn, true});
-  }
-
-  void dispatch(const char *eventName) {
-    for (auto it = this->listeners.begin(); it != this->listeners.end(); ++it) {
-      if (strcmp(it->eventName, eventName) == 0) {
-        it->callback();
-
-        if (it->isOnce) {
-          this->listeners.erase(it--);
-        }
-      }
-    }
-  }
-};
-
-class WiFiManager {
-private:
-  EventDispatcher *dispatcher;
-  bool connected = false;
-  bool shouldConnect = false;
-
-public:
-  static constexpr const char *WiFiConnectedEvent = "wifi_connected";
-  static constexpr const char *WiFiDisconnectedEvent = "wifi_disconnected";
-
-  WiFiManager(EventDispatcher *dispatcher) { this->dispatcher = dispatcher; }
-
-  void connect() { this->shouldConnect = true; }
-
-  void disconnect() {
-    this->shouldConnect = false;
-    WiFi.disconnect();
-    this->connected = false;
-    this->dispatcher->dispatch(WiFiManager::WiFiDisconnectedEvent);
-  }
-
-  void loop() {
-    if (this->shouldConnect && !this->connected &&
-        WiFiMulti.run() == WL_CONNECTED) {
-      this->connected = true;
-      this->shouldConnect = false;
-      this->dispatcher->dispatch(WiFiManager::WiFiConnectedEvent);
-    }
-  }
-};
-
 EventDispatcher dispatcher;
-WiFiManager wifiManager(&dispatcher);
+ESP8266WiFiMulti wifiMulti;
+WiFiManager wifiManager(&wifiMulti, &dispatcher, SSID, PASSWORD);
+APIGatewayTemperatureClient temperatureClient(&dispatcher, &wifiManager);
+DHTesp dht;
+
+float desiredTemperature = 20;
 
 void setClock() {
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
@@ -130,23 +51,30 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
+  dht.setup(TEMP_SENSOR_PIN, DHTesp::DHT11);
 
   delay(1000);
-  WiFi.mode(WIFI_STA);
-  WiFiMulti.addAP(SSID, PASSWORD);
 
-  dispatcher.on(WiFiManager::WiFiConnectedEvent, []() {
-    setClock();
-    digitalWrite(LED_BUILTIN, HIGH);
-  });
+  dispatcher.on<WiFiManager::WiFiConnectedEvent>(
+      [](WiFiManager::WiFiConnectedEvent *) {
+        setClock();
+        digitalWrite(LED_BUILTIN, HIGH);
+      });
 
-  dispatcher.on(WiFiManager::WiFiDisconnectedEvent,
-                []() { digitalWrite(LED_BUILTIN, LOW); });
+  dispatcher.on<WiFiManager::WiFiDisconnectedEvent>(
+      [](WiFiManager::WiFiDisconnectedEvent *) {
+        digitalWrite(LED_BUILTIN, LOW);
+      });
 
-  dispatcher.once(WiFiManager::WiFiConnectedEvent,
-                  []() { wifiManager.disconnect(); });
+  dispatcher.once<WiFiManager::WiFiConnectedEvent>(
+      [](WiFiManager::WiFiConnectedEvent *) { wifiManager.disconnect(); });
 
   wifiManager.connect();
+
+  dispatcher.on<APIGatewayTemperatureClient::TemperatureReceivedEvent>(
+      [](APIGatewayTemperatureClient::TemperatureReceivedEvent *e) {
+        desiredTemperature = e->temperature;
+      });
 }
 
 unsigned long relayTime;
@@ -182,68 +110,23 @@ void switchOffTheBuzzer() {
   digitalWrite(BUZZER_PIN, LOW);
 }
 
-void sendHttpRequest() {
-  dispatcher.once(WiFiManager::WiFiConnectedEvent, [=]() {
-    BearSSL::WiFiClientSecure client;
-    BearSSL::X509List list(cert);
-    client.setTrustAnchors(&list);
-
-    HTTPClient http;
-
-    Serial.print("[HTTP] begin...\n");
-    // Establish the connection
-    if (http.begin(client,
-                   "https://5dsx4lgd5l.execute-api.us-east-1.amazonaws.com/dev/"
-                   "hello")) {
-
-      Serial.print("[HTTP] POST...\n");
-      // start connection and send HTTP header, set the HTTP method and request
-      // body
-      int httpCode = http.POST("{\"message\":\"hello from ESP8266\"}");
-
-      // httpCode will be negative on error
-      if (httpCode > 0) {
-        // HTTP header has been send and Server response header has been handled
-        Serial.printf("[HTTP] POST... code: %d\n", httpCode);
-
-        // file found at server
-        if (httpCode == HTTP_CODE_OK) {
-          // read response body as a string
-          String payload = http.getString();
-          Serial.println(payload);
-        }
-      } else {
-        // print out the error message
-        Serial.printf("[HTTP] POST... failed, error: %s\n",
-                      http.errorToString(httpCode).c_str());
-      }
-
-      // finish the exchange
-      http.end();
-    } else {
-      Serial.printf("[HTTP] Unable to connect\n");
-    }
-
-    wifiManager.disconnect();
-  });
-
-  wifiManager.connect();
-}
+float t = 0.25;
 
 void loop() {
   wifiManager.loop();
+  temperatureClient.loadTemperature();
 
-  if (isRelayOff() && isButtonPressed()) {
+  delay(dht.getMinimumSamplingPeriod());
+  float sensorTemperature = dht.getTemperature();
+
+  Serial.printf("Desired temp.: %.2f Sensor temp.: %.2f \n", desiredTemperature,
+                sensorTemperature);
+
+  if (sensorTemperature < desiredTemperature - t) {
     switchOnTheRelay();
   }
 
-  if (isRelayOn() && relayTime < millis()) {
+  if (sensorTemperature > desiredTemperature + t) {
     switchOffTheRelay();
-    switchOnTheBuzzer();
-    sendHttpRequest();
-  }
-
-  if (isBuzzerOn() && buzzerOffTime < millis()) {
-    switchOffTheBuzzer();
   }
 }
