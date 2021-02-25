@@ -3,7 +3,8 @@
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
-#include <WiFiClient.h>
+#include <EventDispatcher.hpp>
+#include <WiFiManager.hpp>
 
 ESP8266WiFiMulti WiFiMulti;
 
@@ -41,70 +42,9 @@ rqXRfboQnoZsG4q5WTP468SQvvG5
 -----END CERTIFICATE-----
 )EOF";
 
-class EventDispatcher {
-private:
-  struct Listener {
-    const char *eventName;
-    std::function<void(void)> callback;
-    bool isOnce;
-  };
-  std::vector<Listener> listeners;
-
-public:
-  void on(const char *eventName, std::function<void(void)> fn) {
-    this->listeners.push_back(Listener{eventName, fn, false});
-  }
-
-  void once(const char *eventName, std::function<void(void)> fn) {
-    this->listeners.push_back(Listener{eventName, fn, true});
-  }
-
-  void dispatch(const char *eventName) {
-    for (auto it = this->listeners.begin(); it != this->listeners.end(); ++it) {
-      if (strcmp(it->eventName, eventName) == 0) {
-        it->callback();
-
-        if (it->isOnce) {
-          this->listeners.erase(it--);
-        }
-      }
-    }
-  }
-};
-
-class WiFiManager {
-private:
-  EventDispatcher *dispatcher;
-  bool connected = false;
-  bool shouldConnect = false;
-
-public:
-  static constexpr const char *WiFiConnectedEvent = "wifi_connected";
-  static constexpr const char *WiFiDisconnectedEvent = "wifi_disconnected";
-
-  WiFiManager(EventDispatcher *dispatcher) { this->dispatcher = dispatcher; }
-
-  void connect() { this->shouldConnect = true; }
-
-  void disconnect() {
-    this->shouldConnect = false;
-    WiFi.disconnect();
-    this->connected = false;
-    this->dispatcher->dispatch(WiFiManager::WiFiDisconnectedEvent);
-  }
-
-  void loop() {
-    if (this->shouldConnect && !this->connected &&
-        WiFiMulti.run() == WL_CONNECTED) {
-      this->connected = true;
-      this->shouldConnect = false;
-      this->dispatcher->dispatch(WiFiManager::WiFiConnectedEvent);
-    }
-  }
-};
-
 EventDispatcher dispatcher;
-WiFiManager wifiManager(&dispatcher);
+ESP8266WiFiMulti wifiMulti;
+WiFiManager wifiManager(&wifiMulti, &dispatcher, SSID, PASSWORD);
 
 void setClock() {
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
@@ -132,8 +72,6 @@ void setup() {
   digitalWrite(LED_BUILTIN, LOW);
 
   delay(1000);
-  WiFi.mode(WIFI_STA);
-  WiFiMulti.addAP(SSID, PASSWORD);
 
   dispatcher.on(WiFiManager::WiFiConnectedEvent, []() {
     setClock();
