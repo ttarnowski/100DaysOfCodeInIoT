@@ -3,14 +3,15 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <EventDispatcher.hpp>
+#include <Timer.hpp>
 #include <WiFiClient.h>
 
 class WiFiManager {
 private:
   ESP8266WiFiMulti *wifiMulti;
   EventDispatcher *dispatcher;
+  Timer *timer;
   bool connected = false;
-  bool shouldConnect = false;
 
 public:
   struct WiFiConnectedEvent {
@@ -22,28 +23,39 @@ public:
   };
 
   WiFiManager(ESP8266WiFiMulti *wifiMulti, EventDispatcher *dispatcher,
-              const char *ssid, const char *password) {
+              Timer *timer, const char *ssid, const char *password) {
     this->wifiMulti = wifiMulti;
     this->dispatcher = dispatcher;
+    this->timer = timer;
     WiFi.mode(WIFI_STA);
     this->wifiMulti->addAP(ssid, password);
   }
 
-  void connect() { this->shouldConnect = true; }
+  void connect(std::function<void(wl_status_t)> onConnected,
+               unsigned long timeoutMs = 5000) {
+    if (this->connected && WiFi.status() == WL_CONNECTED) {
+      onConnected(WL_CONNECTED);
+      return;
+    }
+
+    this->connected = false;
+
+    this->timer->setOnLoopUntil(
+        [onConnected, this]() {
+          if (this->wifiMulti->run() == WL_CONNECTED) {
+            this->connected = true;
+            onConnected(WL_CONNECTED);
+            this->dispatcher->dispatch(WiFiConnectedEvent{});
+            return true;
+          }
+          return false;
+        },
+        [onConnected]() { onConnected(WL_CONNECT_FAILED); }, timeoutMs);
+  }
 
   void disconnect() {
-    this->shouldConnect = false;
     WiFi.disconnect();
     this->connected = false;
     this->dispatcher->dispatch(WiFiDisconnectedEvent{});
-  }
-
-  void loop() {
-    if (this->shouldConnect && !this->connected &&
-        this->wifiMulti->run() == WL_CONNECTED) {
-      this->connected = true;
-      this->shouldConnect = false;
-      this->dispatcher->dispatch(WiFiConnectedEvent{});
-    }
   }
 };
