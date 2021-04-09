@@ -1,17 +1,15 @@
 # 100DaysOfCode in IoT Challenge
-## Day 19
+## Day 20
 
-Creating, writing and reading files on ESP8266.
+Downloading files on ESP8266 over HTTPS and storing in device's flash memory.
 
-- Downloading small file over HTTP:
-https://github.com/ttarnowski/esp8266-file-system/tree/file-download-http-small-file
+## Link to the code
 
-- Downloading big file over HTTP:
-https://github.com/ttarnowski/esp8266-file-system/tree/file-download-http-big-file
+https://github.com/ttarnowski/esp8266-file-system/tree/file-download-https-client
 
-## Link to YouTube Video (Day19):
+## Link to YouTube Video (Day20):
 
-https://www.youtube.com/watch?v=vVMHZe1s14I
+https://www.youtube.com/watch?v=rYyi8EaN6Ic
 
 ## All Days List:
 
