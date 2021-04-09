@@ -1,20 +1,17 @@
 # 100DaysOfCode in IoT Challenge
-## Day 18
+## Day 19
 
 Creating, writing and reading files on ESP8266.
 
-- Writing to and reading from the file - simple example for dealing with small files:
-https://github.com/ttarnowski/esp8266-file-system/tree/writing-reading-small-files
+- Downloading small file over HTTP:
+https://github.com/ttarnowski/esp8266-file-system/tree/file-download-http-small-file
 
-- Writing to and reading from the file - simple example for dealing with big files with new line separations:
-https://github.com/ttarnowski/esp8266-file-system/tree/writing-reading-big-files-n-separation
+- Downloading big file over HTTP:
+https://github.com/ttarnowski/esp8266-file-system/tree/file-download-http-big-file
 
-- Writing to and reading from the file - use of buffer var and readBytes method for dealing with big files without separation characters:
-https://github.com/ttarnowski/esp8266-file-system/tree/writing-reading-readBytes
+## Link to YouTube Video (Day19):
 
-## Link to YouTube Video (Day18):
-
-https://www.youtube.com/watch?v=0jDD0XaDus4
+https://www.youtube.com/watch?v=vVMHZe1s14I
 
 ## All Days List:
 
