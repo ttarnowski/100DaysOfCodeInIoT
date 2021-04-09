@@ -1,42 +1,20 @@
 # 100DaysOfCode in IoT Challenge
-## Day 15
+## Day 18
 
-My core library to handle timeouts, wifi and https client (code from refactoring session).
+Creating, writing and reading files on ESP8266.
 
-## Requirements
-1. Visual Studio Code IDE:
-https://code.visualstudio.com/
-2. C/C++ VSCode extension:
-https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools
-3. Clang-Format VSCode extension:
-https://marketplace.visualstudio.com/items?itemName=xaver.clang-format
-4. PlatformIO VSCode extension:
-https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide
+- Writing to and reading from the file - simple example for dealing with small files:
+https://github.com/ttarnowski/esp8266-file-system/tree/writing-reading-small-files
 
-## Building 
-In Visual Studio Code go to:
+- Writing to and reading from the file - simple example for dealing with big files with new line separations:
+https://github.com/ttarnowski/esp8266-file-system/tree/writing-reading-big-files-n-separation
 
-`View -> Command Pallette...`
+- Writing to and reading from the file - use of buffer var and readBytes method for dealing with big files without separation characters:
+https://github.com/ttarnowski/esp8266-file-system/tree/writing-reading-readBytes
 
-Type `PlatformIO: Build`
+## Link to YouTube Video (Day18):
 
-Press Enter
-
-
-## Deploying code to ESP8266
-Connect ESP8266 to your computer
-
-In Visual Studio Code go to:
-
-`View -> Command Pallette...`
-
-Type `PlatformIO: Upload`
-
-Press Enter
-
-## Link to YouTube Video (Day15):
-
-https://www.youtube.com/watch?v=Jw2rrXtbGhQ
+https://www.youtube.com/watch?v=0jDD0XaDus4
 
 ## All Days List:
 
